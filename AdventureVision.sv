@@ -209,6 +209,8 @@ localparam CONF_STR = {
 	"O23,Scale,Normal,V-Integer,Narrower HV-Integer,Wider HV-Integer;",
 	"-;",
 	"O1,Simulate Mirror,Off,On;",
+	"O7,Custom Palette,Off,On;",
+	"D0FC3,GBP,Load Palette;",
 	"-;",
 	"R0,Reset;",
 	"J1,1,2,3,4;",
@@ -255,10 +257,13 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask(0),
+	.status_menumask(~status[7]),
 	
 	.ps2_key(ps2_key)
 );
+
+wire cart_download = (ioctl_index[5:0] == 0 || ioctl_index[5:0] == 1) && ioctl_download;
+wire palette_download = (ioctl_index[5:0] == 3) && ioctl_download;
 
 ///////////////////////   CLOCKS   ///////////////////////////////
 
@@ -271,7 +276,7 @@ pll pll
 	.outclk_1(clk_vid)
 );
 
-wire reset = RESET | status[0] | buttons[1] | ioctl_download;
+wire reset = RESET | status[0] | buttons[1] | cart_download;
 
 //////////////////////////////////////////////////////////////////
 
@@ -376,8 +381,19 @@ dpram #(.addr_width_g(12)) cart_ram
 	.clk_a_i           (clk_sys),
 	.addr_a_i          (ioctl_addr),
 	.data_a_i          (ioctl_dout),
-	.we_i              (ioctl_wr)
+	.we_i              (ioctl_wr && cart_download)
 );
+
+reg [127:0] palette = 128'h828214517356305A5F1A3B4900000000;
+
+always @(posedge clk_sys) begin
+	if (palette_download & ioctl_wr) begin
+			palette[127:0] <= {palette[119:0], ioctl_dout[7:0]};
+	end
+end
+
+wire [23:0] color_fg = {palette[127:104]};
+wire [23:0] color_bg = {palette[55:32]};
 
 wire [2:0] scale = status[6:4];
 wire [2:0] sl = scale ? scale - 1'd1 : 3'd0;
@@ -397,6 +413,14 @@ video_t [3:0] vid_pipe;
 
 wire vid_de;
 
+wire [7:0] r_pal, g_pal, b_pal;
+
+wire use_pal = status[7];
+
+assign r_pal = vid_de ? (use_pal ? (|vid_pipe[3].Red ? color_fg[23:16] : color_bg[23:16]) : vid_pipe[3].Red) : 8'd0;
+assign g_pal = vid_de ? (use_pal ? (|vid_pipe[3].Red ? color_fg[15:8] : color_bg[15:8]) : 8'd0) : 8'd0;
+assign b_pal = vid_de ? (use_pal ? (|vid_pipe[3].Red ? color_fg[7:0] : color_bg[7:0]) : 8'd0) : 8'd0;
+
 video_mixer #(.LINE_LENGTH(450),.GAMMA(1),.HALF_DEPTH(0)) video_mixer
 (
 	.CLK_VIDEO              (CLK_VIDEO),            // should be multiple by (ce_pix*4)
@@ -405,9 +429,9 @@ video_mixer #(.LINE_LENGTH(450),.GAMMA(1),.HALF_DEPTH(0)) video_mixer
 	.scandoubler            (scale || forced_scandoubler),
 	.hq2x                   (scale == 1),           // high quality 2x scaling
 	.gamma_bus              (gamma_bus),
-	.R                      (vid_pipe[3].Red),
-	.G                      (8'd0),
-	.B                      (8'd0),
+	.R                      (r_pal),
+	.G                      (g_pal),
+	.B                      (b_pal),
 	.HSync                  (vid_pipe[3].HSync),
 	.VSync                  (vid_pipe[3].VSync),
 	.HBlank                 (vid_pipe[3].HBlank),
@@ -446,6 +470,7 @@ reg [1:0] pix_div;
 
 always @(posedge clk_vid) begin
 	pix_div <= pix_div + 1'd1;
+
 	vid_pipe[0].Red <= {Red, Red, Red[2:1]};
 	vid_pipe[0].HSync <= HSync;
 	vid_pipe[0].VSync <= VSync;

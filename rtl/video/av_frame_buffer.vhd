@@ -97,7 +97,7 @@ architecture rtl of av_frame_buffer is
   -- slots 50 and 150 are 83us long instead of 60us, presumably due to
   -- switching the memory regions in the BIOS routine
   constant cnt_capt_scan_c      : cnt_capt_t :=
-                                  to_unsigned(664, cnt_capt_t'length);
+                                  to_unsigned(660, cnt_capt_t'length);
 
   signal photo_int_q  : std_logic;
 
