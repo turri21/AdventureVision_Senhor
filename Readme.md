@@ -1,3 +1,8 @@
+-=(AdventureVision_Senhor notes)=-
+
+Tested: Working Video 720p, 1080p & Sound.
+
+___
 # Adventure Vision
 
 ## General Information
